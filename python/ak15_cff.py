@@ -157,6 +157,12 @@ def getCustomTaggerDiscriminatorsAK15(name, keep_list):
             'disc_name': '_pfMassDecorrelatedInclParticleTransformerAK15V2JetTagsAll',
             'nano_branch_name': 'globalParT2',
         },
+
+        'GlobalParticleTransformerV2-Finetuned-Hgluglu': {  # GloParT-2 fine-tuned for H->gluglu
+            'cff_path': 'PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedHglugluV2_cff',
+            'disc_name': '_pfMassDecorrelatedHglugluV2JetTagsProbs',
+            'nano_branch_name': 'globalParT2_FinetuneHgluglu',
+        },
     }
 
     cfg = customTaggersAvailableDict[name]

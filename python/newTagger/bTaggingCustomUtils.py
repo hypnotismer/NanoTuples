@@ -3,6 +3,7 @@ def updateSupportedBtagDiscr(supportedBtagInfos, supportedBtagDiscr, supportedMe
     ## Update taggers in DeepHWWV1, DeepHggV3, InclParticleTransformerV1, InclParticleTransformerV2
     from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedDeepHWWV1_cff import _pfMassDecorrelatedDeepHWWV1JetTagsProbs, _pfMassDecorrelatedDeepHWWV1JetTagsMetaDiscrs
     from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedDeepHggV3_cff import _pfMassDecorrelatedDeepHggV3JetTagsProbs, _pfMassDecorrelatedDeepHggV3JetTagsMetaDiscrs
+    from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedHglugluV2_cff import _pfMassDecorrelatedHglugluV2JetTagsProbs, _pfMassDecorrelatedHglugluV2JetTagsMetaDiscrs
     from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedInclParticleTransformerV1_cff import _pfMassDecorrelatedInclParticleTransformerV1JetTagsProbs, _pfMassDecorrelatedInclParticleTransformerV1JetTagsMetaDiscrs
     from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedInclParticleTransformerV2_cff import _pfMassDecorrelatedInclParticleTransformerV2JetTagsProbs, _pfMassDecorrelatedInclParticleTransformerV2JetTagsMetaDiscrs
     from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedInclParticleTransformerV2_cff import _pfMassDecorrelatedInclParticleTransformerAK15V2JetTagsProbs, _pfMassDecorrelatedInclParticleTransformerAK15V2JetTagsMetaDiscrs # AK15 tagger
@@ -12,6 +13,7 @@ def updateSupportedBtagDiscr(supportedBtagInfos, supportedBtagDiscr, supportedMe
     # update supportedBtagDiscr
     supportedBtagInfos.extend(["pfMassDecorrelatedDeepHWWV1TagInfos"])
     supportedBtagInfos.extend(["pfMassDecorrelatedDeepHggV3TagInfos"])
+    supportedBtagInfos.extend(["pfMassDecorrelatedHglugluV2TagInfos"])
     supportedBtagInfos.extend(["pfMassDecorrelatedInclParticleTransformerV1TagInfos"])
     supportedBtagInfos.extend(["pfMassDecorrelatedInclParticleTransformerV2TagInfos"])
     supportedBtagInfos.extend(["pfMassDecorrelatedInclParticleTransformerAK15V2TagInfos"])
@@ -19,6 +21,8 @@ def updateSupportedBtagDiscr(supportedBtagInfos, supportedBtagDiscr, supportedMe
         supportedBtagDiscr[disc] = [["pfMassDecorrelatedDeepHWWV1TagInfos"]]
     for disc in _pfMassDecorrelatedDeepHggV3JetTagsProbs + _pfMassDecorrelatedDeepHggV3JetTagsMetaDiscrs:
         supportedBtagDiscr[disc] = [["pfMassDecorrelatedDeepHggV3TagInfos"]]
+    for disc in _pfMassDecorrelatedHglugluV2JetTagsProbs + _pfMassDecorrelatedHglugluV2JetTagsMetaDiscrs:
+        supportedBtagDiscr[disc] = [["pfMassDecorrelatedHglugluV2TagInfos"]]
     for disc in _pfMassDecorrelatedInclParticleTransformerV1JetTagsProbs + _pfMassDecorrelatedInclParticleTransformerV1JetTagsMetaDiscrs:
         supportedBtagDiscr[disc] = [["pfMassDecorrelatedInclParticleTransformerV1TagInfos"]]
     for disc in _pfMassDecorrelatedInclParticleTransformerV2JetTagsProbs + _pfMassDecorrelatedInclParticleTransformerV2JetTagsMetaDiscrs:
@@ -34,6 +38,8 @@ def updateSupportedBtagDiscr(supportedBtagInfos, supportedBtagDiscr, supportedMe
         supportedMetaDiscr[disc] = _pfMassDecorrelatedDeepHWWV1JetTagsProbs
     for disc in _pfMassDecorrelatedDeepHggV3JetTagsMetaDiscrs:
         supportedMetaDiscr[disc] = _pfMassDecorrelatedDeepHggV3JetTagsProbs
+    for disc in _pfMassDecorrelatedHglugluV2JetTagsMetaDiscrs:
+        supportedMetaDiscr[disc] = _pfMassDecorrelatedHglugluV2JetTagsProbs
     for disc in _pfMassDecorrelatedInclParticleTransformerV1JetTagsMetaDiscrs:
         supportedMetaDiscr[disc] = _pfMassDecorrelatedInclParticleTransformerV1JetTagsProbs
     for disc in _pfMassDecorrelatedInclParticleTransformerV2JetTagsMetaDiscrs:
@@ -50,6 +56,7 @@ def updateSupportedBtagDiscr(supportedBtagInfos, supportedBtagDiscr, supportedMe
 ## Import TagInfos additional to RecoBTag_cff
 from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedDeepHWWV1_cff import *
 from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedDeepHggV3_cff import *
+from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedHglugluV2_cff import *
 from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedInclParticleTransformerV1_cff import *
 from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedInclParticleTransformerV2_cff import *
 from PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedInclParticleTransformerV3_cff import *

@@ -3,9 +3,9 @@ from PhysicsTools.NanoTuples.ak15_cff import setupAK15
 from PhysicsTools.NanoTuples.ak8_cff import addCustomTaggerAK8
 
 _default_cfg = {
-    'addAK15': False,
-    'customAK8Taggers': ['GlobalParticleTransformerV3FullScore'],
-    'customAK15Taggers': [],
+    'addAK15': True,
+    'customAK8Taggers': [],
+    'customAK15Taggers': ['GlobalParticleTransformerV2-Finetuned-Hgluglu'],
 
     'keepBranchMap': {
         'GlobalParticleTransformerV2': [
@@ -33,6 +33,10 @@ _default_cfg = {
         'GlobalParticleTransformerV3-Finetuned-DeepHgg': [
             # GloParT fine-tuned for H->gamgam
             'probHaa', 'probP', 'probNP', 'probPP', 'probPNP', 'probNPNP', 'probQCDb', 'probQCDbb', 'probQCDc', 'probQCDcc', 'probQCDothers',
+        ],
+        'GlobalParticleTransformerV2-Finetuned-Hgluglu': [
+            # GloParT fine-tuned for H->gluglu
+            'probHgg', 'probTTbarTop', 'probTTbarQCD', 'probWJetsQCD', 
         ],
     }
 }
