@@ -117,8 +117,8 @@ Queue NEVENT, FILEIN, FILEOUT, LOGPREFIX from (
     for nevents, filein in sample.select(target_nevents):
         filename = os.path.basename(filein)
         fileout = os.path.join(outdir, filename.replace('MiniAODv2', 'CustomizedNanoAODv9'))
-        success = check_success(fileout, nevents)
-        #success = False
+        #success = check_success(fileout, nevents)
+        success = False
         print('%s %s' % (('Skipping' if success else 'Adding'), fileout))
         if success: continue
         #os.close(os.open(fileout, os.O_WRONLY | os.O_TRUNC))  # truncate

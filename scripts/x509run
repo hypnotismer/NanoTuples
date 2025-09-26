@@ -1,12 +1,5 @@
 #!/bin/bash
 
-if [ "${SINGULARITY_NAME}" != "el7:x86_64" ]; then
-    echo "Entering cmssw-el7..."
-    exec cmssw-el7 --command-to-run "/bin/bash" "$0" "$@"
-fi
-echo "Now in cmssw-el7!"
-echo "Command line: $0 $*"
-
 if [ $# -lt 2 ]; then
     >&2 echo "usage: $(basename "$0") <x509up> <prog> [ <args> ]"
     exit 1

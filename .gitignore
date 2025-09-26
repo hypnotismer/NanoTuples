@@ -7,4 +7,3 @@
 test/
 __init__.py
 *.pyc
-*.onnx

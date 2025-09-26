@@ -15,46 +15,41 @@ NTHREAD="$2"
 FILEIN="$3"
 FILEOUT="$4"
 filename=$(basename "$FILEOUT")
-mkdir tmp
+mkdir -p tmp
 
 if [ -z "${FILEOUT}" ]; then
-    FILEOUT="${FILEIN/MiniAODv2/CustomizedNanoAODv9}"
+    FILEOUT="${FILEIN/MiniAODv2/CustomizedNanoAODv15}"
 fi
 if [ "${FILEIN:0:7}" != "root://" ]; then FILEIN="file:${FILEIN}"; fi
 if [ "${FILEOUT:0:7}" != "root://" ]; then FILEOUT="file:${FILEOUT}"; fi
 
 set -ev
 voms-proxy-info  # early stop on proxy error
-source /cvmfs/cms.cern.ch/cmsset_default.sh
-export SCRAM_ARCH=slc7_amd64_gcc700
-[ -r CMSSW_10_6_31 ] || cmsrel CMSSW_10_6_31
-cd CMSSW_10_6_31/src
+cmsrel CMSSW_15_0_10
+cd CMSSW_15_0_10/src
 cmsenv
 
 rm -rf PhysicsTools/NanoTuples
-git clone https://github.com/hypnotismer/hss-nano PhysicsTools/NanoTuples -b dev-ak15tagger-UL
-PhysicsTools/NanoTuples/scripts/install_onnxruntime.sh
-wget https://coli.web.cern.ch/coli/tmp/.231117-195737_ak15_stage2/model.onnx -O $CMSSW_BASE/src/PhysicsTools/NanoTuples/data/InclParticleTransformer-MD/ak15/V02/model.onnx
+git clone https://github.com/hypnotismer/NanoTuples PhysicsTools/NanoTuples -b nanov15-finetune-hgluglu
+#PhysicsTools/NanoTuples/scripts/install_onnxruntime.sh
+#wget https://coli.web.cern.ch/coli/tmp/.231117-195737_ak15_stage2/model.onnx -O $CMSSW_BASE/src/PhysicsTools/NanoTuples/data/InclParticleTransformer-MD/ak15/V02/model.onnx
 scram b -j$(cat /proc/cpuinfo | grep MHz | wc -l)
 
 cd ../../tmp
 workdir=`pwd`
 path="$workdir/$filename"
 cd ..
-cd CMSSW_10_6_31/src
+cd CMSSW_15_0_10/src
 
-cmsDriver.py \
-    --data \
-    -n "${NEVENT}" \
-    --nThreads "${NTHREAD}" \
-    --python_filename run-data-2018.py \
-    --eventcontent NANOAOD \
-    --datatier NANOAOD \
-    --conditions 106X_dataRun2_v35 \
-    --step NANO \
+cmsDriver.py step2  \
+    -s NANO --process NANO --data  \
+    --nThreads ${NTHREAD} \
+    --eventcontent NANOAOD --datatier NANOAOD \
+    -n ${NEVENT} \
     --era Run2_2018,run2_nanoAOD_106Xv2 \
     --customise PhysicsTools/NanoTuples/nanoTuples_cff.nanoTuples_customizeData \
-    --filein "${FILEIN}" \
-    --fileout "${path}" \
+    --conditions auto:run2_data \
+    --filein file:${FILEIN} \
+    --fileout file:${path}
 
 xrdcp --silent -p -f ${path} ${FILEOUT}
