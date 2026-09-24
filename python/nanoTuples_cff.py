@@ -3,9 +3,9 @@ from PhysicsTools.NanoTuples.ak15_cff import setupAK15
 from PhysicsTools.NanoTuples.ak8_cff import addCustomTaggerAK8
 
 _default_cfg = {
-    'addAK15': False,
+    'addAK15': True,
     'customAK8Taggers': ['GlobalParticleTransformerV3FullScore'],
-    'customAK15Taggers': [],
+    'customAK15Taggers': ['GlobalParticleTransformerV2-AK15-Finetuned-Xggg'],
 
     'keepBranchMap': {
         'GlobalParticleTransformerV2': [
@@ -20,6 +20,10 @@ _default_cfg = {
             'probHbb', 'probHcc', 'probHss', 'probHqq', 'probHbc', 'probHbs', 'probHcs', 'probHgg', 'probHee', 'probHmm', 'probHtauhtaue', 'probHtauhtaum', 'probHtauhtauh', 
             'probTopbWcs', 'probTopbWqq', 'probTopbWc', 'probTopbWs', 'probTopbWq', 'probTopbWev', 'probTopbWmv', 'probTopbWtauev', 'probTopbWtaumv', 'probTopbWtauhv', 'probTopWcs', 'probTopWqq', 'probTopWev', 'probTopWmv', 'probTopWtauev', 'probTopWtaumv', 'probTopWtauhv', 
             'probQCDbb', 'probQCDcc', 'probQCDb', 'probQCDc', 'probQCDothers', 
+            'resonanceMassCorr', 'visiableMassCorr',
+        ],
+        'GlobalParticleTransformerV2-AK15-Finetuned-Xggg': [
+            'probXggg', 'probLeak', 'probTop', 'probQCD',
             'resonanceMassCorr', 'visiableMassCorr',
         ],
         'GlobalParticleTransformerV3FullScore': [
@@ -48,7 +52,7 @@ def nanoTuples_customizeCommon(process, runOnMC,
          - customAK8Taggers: available taggers are (refer to ak8_cff.py):
              ['DeepHWWV1', 'InclParticleTransformerV1', 'GlobalParticleTransformerV2', 'GlobalParticleTransformerV3FullScore']
          - customAK15Taggers (for akAK15=True): available taggers are (refer to ak15_cff.py):
-             ['GlobalParticleTransformerV2-AK15']
+             ['GlobalParticleTransformerV2-AK15', 'GlobalParticleTransformerV2-AK15-Finetuned-Xggg']
          - keepBranchMap: dictionary with {tagger_name: branch_list}; for specified tagger_name, only keep branches in branch_list 
     '''
 

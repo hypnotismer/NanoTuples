@@ -157,6 +157,11 @@ def getCustomTaggerDiscriminatorsAK15(name, keep_list):
             'disc_name': '_pfMassDecorrelatedInclParticleTransformerAK15V2JetTagsAll',
             'nano_branch_name': 'globalParT2',
         },
+        'GlobalParticleTransformerV2-AK15-Finetuned-Xggg': {
+            'cff_path': 'PhysicsTools.NanoTuples.newTagger.pfMassDecorrelatedXgggFinetuneV2_cff',
+            'disc_name': '_pfMassDecorrelatedXgggFinetuneV2JetTagsProbs',
+            'nano_branch_name': 'inclParTMDV2_xggg',
+        },
     }
 
     cfg = customTaggersAvailableDict[name]
