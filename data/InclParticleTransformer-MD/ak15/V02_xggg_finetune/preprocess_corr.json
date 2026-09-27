@@ -660,12 +660,12 @@
   },
   "jet_features": {
     "var_names": [
-      "jet_pt_log",
-      "jet_mass_log",
+      "jet_pt_log_fake",
+      "jet_mass_log_fake",
       "jet_eta_fake"
     ],
     "var_infos": {
-      "jet_pt_log": {
+      "jet_pt_log_fake": {
         "median": 7.0,
         "norm_factor": 2.0,
         "replace_inf_value": 0,
@@ -673,7 +673,7 @@
         "upper_bound": 5,
         "pad": 0
       },
-      "jet_mass_log": {
+      "jet_mass_log_fake": {
         "median": 5.0,
         "norm_factor": 0.8,
         "replace_inf_value": 0,

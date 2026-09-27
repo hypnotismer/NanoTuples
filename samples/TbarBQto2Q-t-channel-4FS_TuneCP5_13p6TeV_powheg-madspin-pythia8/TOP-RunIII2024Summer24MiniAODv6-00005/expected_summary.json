@@ -1,0 +1,6 @@
+{
+  "nfiles": 1942,
+  "nevents": 43279124,
+  "source_AN_primary": "/TbarBQ_t-channel_4FS_TuneCP5_13p6TeV_powheg-madspin-pythia8",
+  "match_type": "SPLIT_BY_DECAY"
+}

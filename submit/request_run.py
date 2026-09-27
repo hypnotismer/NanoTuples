@@ -65,14 +65,14 @@ def output_uri(value: str) -> str:
     return safe_field("root://eosuser.cern.ch/" + str(resolved).rstrip("/"))
 
 
-def dataset_inputs(dataset: str, mode: str, limit: int | None, proxy: Path) -> list[tuple[str, str]]:
+def dataset_inputs(dataset: str, mode: str, limit: int | None, proxy: Path, instance: str) -> list[tuple[str, str]]:
     fields = dataset.strip("/").split("/")
     tier = "MINIAOD" if mode == "data" else "MINIAODSIM"
     if len(fields) != 3 or fields[2] != tier or "2024" not in dataset:
         raise ValueError(f"Expected a 2024 /primary/campaign/{tier} dataset")
     command = [
         "dasgoclient",
-        "-query", f"file dataset={dataset} | grep file.name",
+        "-query", f"file dataset={dataset} instance={instance} | grep file.name",
         f"-limit={limit or 0}",
     ]
     try:
@@ -121,7 +121,10 @@ def snapshot(path: Path) -> None:
             parts = rel.parts
             if (
                 ".git" in parts or "__pycache__" in parts
-                or parts[:2] == ("submit", "jobs")
+                or parts[0] == "samples"
+                or (parts[0] == "submit" and rel.as_posix() not in (
+                    "submit/slim_nano.py", "submit/keep_and_drop_2024.txt"
+                ))
                 or "log" in parts
                 or item.suffix in (".pyc", ".root", ".jdl")
                 or item.name.startswith("x509up")
@@ -130,9 +133,14 @@ def snapshot(path: Path) -> None:
             archive.add(item, arcname="NanoTuples/" + rel.as_posix(), recursive=False)
 
 
-def make_parser() -> argparse.ArgumentParser:
+def make_parser(default_output_kind: str = "full") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("data", "mc"), required=True)
+    parser.add_argument("--year", choices=("2024",), default="2024")
+    parser.add_argument("--dbs-instance", choices=("prod/global", "prod/phys03"), default="prod/global",
+                        help="DBS instance for --dataset; DY samples may need prod/phys03")
+    parser.add_argument("--output-kind", choices=("full", "slim"), default=default_output_kind,
+                        help="full customized NanoAOD or old-style 0L/1L/2L slimmed NanoAOD")
     sources = parser.add_mutually_exclusive_group(required=True)
     sources.add_argument("--dataset", help="2024 DAS MiniAOD dataset")
     sources.add_argument("--input-list", type=Path, help="one LFN, root URL, or EOS file path per line")
@@ -154,8 +162,8 @@ def make_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = make_parser().parse_args()
+def main(default_output_kind: str = "full") -> None:
+    args = make_parser(default_output_kind).parse_args()
     if args.events == 0 or args.events < -1:
         raise ValueError("--events must be -1 or positive")
     if args.threads < 1 or args.memory_mb < 1 or args.max_runtime < 1:
@@ -167,7 +175,7 @@ def main() -> None:
         raise ValueError("--requirements must be a single line")
     if args.dataset:
         check_proxy(args.proxy)
-        inputs = dataset_inputs(args.dataset, args.mode, args.max_files, args.proxy)
+        inputs = dataset_inputs(args.dataset, args.mode, args.max_files, args.proxy, args.dbs_instance)
         name = args.name or args.dataset.strip("/").split("/")[0]
     elif args.input_list:
         name = args.name or args.input_list.stem
@@ -187,7 +195,7 @@ def main() -> None:
 
     output_base = output_uri(args.output_dir)
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_name = slug(name) + "_" + timestamp
+    run_name = slug(name + ("_slim" if args.output_kind == "slim" else "")) + "_" + timestamp
     job_dir = (args.job_dir or SUBMIT / "jobs" / run_name).resolve()
     job_dir.mkdir(parents=True, exist_ok=False)
     (job_dir / "logs").mkdir()
@@ -197,19 +205,22 @@ def main() -> None:
     rows = []
     for index, (label, source) in enumerate(inputs, start=1):
         stem = slug(Path(urlsplit(source).path).stem)
-        dest = f"{output_base}/{run_name}/{slug(label)}/{index:05d}_{stem}_nano.root"
+        suffix = "_nano_slim.root" if args.output_kind == "slim" else "_nano.root"
+        dest = f"{output_base}/{run_name}/{slug(label)}/{index:05d}_{stem}{suffix}"
         rows.append(f"{args.events}, {safe_field(source)}, {safe_field(dest)}")
 
     version = PACKAGE.parents[2].name
     if not re.fullmatch(r"CMSSW_[0-9_]+", version):
         raise RuntimeError(f"Could not derive CMSSW version from {PACKAGE}")
+    executable = SUBMIT / f"run-{args.mode}-{args.year}{'-slim' if args.output_kind == 'slim' else ''}.sh"
+    if not executable.is_file():
+        raise FileNotFoundError(executable)
     jdl = job_dir / "nano.jdl"
     lines = [
         "universe = vanilla",
-        f"executable = {SUBMIT / 'run_nano.sh'}",
+        f"executable = {executable}",
         "transfer_executable = True",
-        "arguments = $(MODE) $(NEVENT) $(THREADS) $(FILEIN) $(FILEOUT)",
-        f"MODE = {args.mode}",
+        "arguments = $(NEVENT) $(THREADS) $(FILEIN) $(FILEOUT)",
         f"THREADS = {args.threads}",
         f'environment = "CMSSW_VERSION={version} SCRAM_ARCH={args.scram_arch}"',
         f"request_cpus = {args.threads}",
@@ -220,7 +231,7 @@ def main() -> None:
         f"x509userproxy = {args.proxy.resolve()}",
         "should_transfer_files = YES",
         "when_to_transfer_output = ON_EXIT",
-        f"transfer_input_files = {tarball}",
+        f"transfer_input_files = {tarball}, {SUBMIT / 'run_nano.sh'}",
         'transfer_output_files = ""',
         "on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)",
         f"Log = {job_dir / 'logs' / '$(ClusterId).$(ProcId).log'}",
@@ -232,7 +243,7 @@ def main() -> None:
     lines.extend(["", "queue NEVENT, FILEIN, FILEOUT from (", *rows, ")", ""])
     jdl.write_text("\n".join(lines))
 
-    print(f"Prepared {len(inputs)} {args.mode} job(s): {jdl}")
+    print(f"Prepared {len(inputs)} {args.mode} {args.output_kind} job(s): {jdl}")
     print(f"Code snapshot: {tarball}")
     if missing:
         print("Configured assets still missing: " + ", ".join(missing))

@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 5 ]]; then
-    echo "Usage: $0 <data|mc> <events> <threads> <input> <output-root-url>" >&2
+if [[ $# -ne 4 ]]; then
+    echo "Usage: $0 <events> <threads> <input> <output-root-url>" >&2
     exit 2
 fi
 
-mode=$1
-events=$2
-threads=$3
-filein=$4
-fileout=$5
-if [[ "$mode" != data && "$mode" != mc ]]; then
-    echo "Mode must be data or mc" >&2
+: "${NANO_MODE:?Use one of the year/mode-specific run-*-2024*.sh scripts}"
+: "${NANO_OUTPUT_KIND:?Output kind is not set}"
+: "${NANO_ERA:?Era is not set}"
+: "${NANO_CONDITIONS:?Conditions are not set}"
+: "${NANO_CONTENT:?Event content is not set}"
+: "${NANO_CUSTOMISE:?Customise function is not set}"
+if [[ "$NANO_MODE" != mc && "$NANO_MODE" != data ]]; then
+    echo "NANO_MODE must be mc or data" >&2
     exit 2
 fi
+if [[ "$NANO_OUTPUT_KIND" != full && "$NANO_OUTPUT_KIND" != slim ]]; then
+    echo "NANO_OUTPUT_KIND must be full or slim" >&2
+    exit 2
+fi
+events=$1
+threads=$2
+filein=$3
+fileout=$4
+
 if [[ "$fileout" != root://* ]]; then
     echo "Output must be a root:// URL" >&2
     exit 2
@@ -50,16 +60,10 @@ done
 
 scram b -j "$threads"
 
-if [[ "$mode" == mc ]]; then
+if [[ "$NANO_MODE" == mc ]]; then
     mode_flag=--mc
-    content=NANOAODSIM
-    conditions=150X_mcRun3_2024_realistic_v2
-    customise=PhysicsTools/NanoTuples/nanoTuples_cff.nanoTuples_customizeMC
 else
     mode_flag=--data
-    content=NANOAOD
-    conditions=150X_dataRun3_v2
-    customise=PhysicsTools/NanoTuples/nanoTuples_cff.nanoTuples_customizeData
 fi
 
 cmsDriver.py \
@@ -67,19 +71,26 @@ cmsDriver.py \
     -n "$events" \
     --nThreads "$threads" \
     --python_filename "$workdir/nano_cfg.py" \
-    --eventcontent "$content" \
-    --datatier "$content" \
-    --conditions "$conditions" \
+    --eventcontent "$NANO_CONTENT" \
+    --datatier "$NANO_CONTENT" \
+    --conditions "$NANO_CONDITIONS" \
     --step NANO \
     --scenario pp \
-    --era Run3_2024 \
-    --customise "$customise" \
+    --era "$NANO_ERA" \
+    --customise "$NANO_CUSTOMISE" \
     --filein "$filein" \
     --fileout "file:$workdir/nano.root" \
     --no_exec
 
 cmsRun "$workdir/nano_cfg.py"
 test -s "$workdir/nano.root"
+output_file="$workdir/nano.root"
+if [[ "$NANO_OUTPUT_KIND" == slim ]]; then
+    python3 PhysicsTools/NanoTuples/submit/slim_nano.py "$output_file" "$workdir/nano_slim.root"
+    test -s "$workdir/nano_slim.root"
+    output_file="$workdir/nano_slim.root"
+    rm "$workdir/nano.root"
+fi
 
 remote=${fileout#root://}
 server=${remote%%/*}
@@ -88,4 +99,4 @@ if [[ "$remote_path" != /* ]]; then
     remote_path="/$remote_path"
 fi
 xrdfs "root://$server" mkdir -p "${remote_path%/*}"
-xrdcp --nopbar -f "$workdir/nano.root" "$fileout"
+xrdcp --nopbar -f "$output_file" "$fileout"
