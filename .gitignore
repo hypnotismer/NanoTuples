@@ -9,3 +9,6 @@ __init__.py
 *.pyc
 *.onnx
 /submit/jobs/
+/samples/*/*/filelist
+/samples/*/*/scan.json
+/samples/*/*/scan_error.json

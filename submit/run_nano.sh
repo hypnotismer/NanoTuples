@@ -86,7 +86,7 @@ cmsRun "$workdir/nano_cfg.py"
 test -s "$workdir/nano.root"
 output_file="$workdir/nano.root"
 if [[ "$NANO_OUTPUT_KIND" == slim ]]; then
-    python3 PhysicsTools/NanoTuples/submit/slim_nano.py "$output_file" "$workdir/nano_slim.root"
+    python3 PhysicsTools/NanoTuples/python/slim_nano.py "$output_file" "$workdir/nano_slim.root"
     test -s "$workdir/nano_slim.root"
     output_file="$workdir/nano_slim.root"
     rm "$workdir/nano.root"

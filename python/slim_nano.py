@@ -15,13 +15,13 @@ from PhysicsTools.NanoAODTools.postprocessing.framework.postprocessor import Pos
 
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 
-BRANCH_RULES = Path(__file__).with_name("keep_and_drop_2024.txt")
+BRANCH_RULES = Path(__file__).resolve().parents[1] / "submit" / "keep_and_drop_2024.txt"
 REQUIRED_BRANCHES = (
     "nElectron", "Electron_pt", "Electron_eta", "Electron_mvaIso_WP90",
     "Electron_mvaIso_WP80", "nMuon", "Muon_pt", "Muon_eta",
     "Muon_looseId", "Muon_tightId", "Muon_pfRelIso04_all", "Muon_dxy",
     "Muon_dz", "nAK15Puppi", "AK15Puppi_subJetIdx1",
-    "AK15Puppi_subJetIdx2", "MET_pt",
+    "AK15Puppi_subJetIdx2", "PFMET_pt",
 )
 
 
@@ -56,7 +56,7 @@ class VHSkim2024(Module):
         )
         if not has_fatjet:
             return False
-        pass_0l = loose_e == 0 and loose_mu == 0 and event.MET_pt > 100
+        pass_0l = loose_e == 0 and loose_mu == 0 and event.PFMET_pt > 100
         pass_1l = tight_e == 1 or tight_mu == 1
         pass_2l = loose_e >= 2 or loose_mu >= 2
         return pass_0l or pass_1l or pass_2l

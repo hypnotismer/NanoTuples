@@ -1,0 +1,4 @@
+#!/bin/bash
+
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec voms-proxy-init -voms cms -valid 192:00 -out "$dir/x509up"
