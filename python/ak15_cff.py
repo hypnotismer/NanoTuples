@@ -116,6 +116,13 @@ def setupAK15(process, runOnMC=False, path=None, customAK15Taggers=[], keepBranc
     )
 
     if runOnMC:
+        # Follow the AK8 MC table: use the reference to the original gen
+        # collection, and only index jets retained by genJetAK15Table.cut.
+        process.ak15Table.variables.genJetAK15Idx = Var(
+            "?genJetFwdRef().backRef().isNonnull() && genJetFwdRef().backRef().pt() > 100."
+            "?genJetFwdRef().backRef().key():-1",
+            "int16", doc="index of matched gen AK15 jet in GenJetAK15",
+        )
         process.genJetAK15Table = simpleGenJetFlatTableProducer.clone(
             src=cms.InputTag("ak15GenJetsNoNu"),
             cut=cms.string("pt > 100."),

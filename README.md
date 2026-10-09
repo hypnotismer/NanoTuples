@@ -67,6 +67,12 @@ done
 
 On branch `nanov15-finetune-xggg`, the 2024 data and MC customizations enable the AK15 xggg tagger by default. Its six `AK15Puppi_inclParTMDV2_xggg_*` branches are `probXggg`, `probLeak`, `probTop`, `probQCD`, `resonanceMassCorr`, and `visiableMassCorr` (legacy spelling).
 
+MC production also saves `AK15Puppi_genJetAK15Idx` as an `int16` index into
+`GenJetAK15`, following the standard AK8 convention. Unmatched jets and matches
+outside the gen table's `pt > 100 GeV` selection receive `-1`. Data has no such
+branch. The index preserves the PAT association; downstream JER still checks
+its distance and pt compatibility before using it.
+
 The original CMSSW_10_6_31 preprocessing files are kept under `data/InclParticleTransformer-MD/ak15/V02_xggg_finetune/`. The Run 2 ONNX file is not included. Before running `cmsRun`, place a validated Run 3 model at `model.onnx` in that directory and confirm that its inputs and outputs match `preprocess_corr.json` and the tagger cff. The standard AK8 model configured by this branch must also be installed using the download recipe above.
 
 The test MiniAOD files are documented in `/afs/cern.ch/user/z/zkou/eos/xggg/test/miniAOD_2024/samples.json`. For a W+jets test, replace `--filein` in the MC test command below with `file:/afs/cern.ch/user/z/zkou/eos/xggg/test/miniAOD_2024/mc/WJets_2024.root`.
