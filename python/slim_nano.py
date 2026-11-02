@@ -20,8 +20,7 @@ REQUIRED_BRANCHES = (
     "nElectron", "Electron_pt", "Electron_eta", "Electron_mvaIso_WP90",
     "Electron_mvaIso_WP80", "nMuon", "Muon_pt", "Muon_eta",
     "Muon_looseId", "Muon_tightId", "Muon_pfRelIso04_all", "Muon_dxy",
-    "Muon_dz", "nAK15Puppi", "AK15Puppi_subJetIdx1",
-    "AK15Puppi_subJetIdx2", "PFMET_pt",
+    "Muon_dz", "nAK15Puppi", "PFMET_pt",
 )
 
 
@@ -50,11 +49,7 @@ class VHSkim2024(Module):
             and abs(muon.dz) < 0.2
             for muon in muons
         )
-        has_fatjet = any(
-            jet.subJetIdx1 >= 0 and jet.subJetIdx2 >= 0
-            for jet in Collection(event, "AK15Puppi")
-        )
-        if not has_fatjet:
+        if event.nAK15Puppi < 1:
             return False
         pass_0l = loose_e == 0 and loose_mu == 0 and event.PFMET_pt > 100
         pass_1l = tight_e == 1 or tight_mu == 1

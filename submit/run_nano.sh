@@ -25,38 +25,25 @@ threads=$2
 filein=$3
 fileout=$4
 
-if [[ "$fileout" != root://* ]]; then
-    echo "Output must be a root:// URL" >&2
-    exit 2
-fi
-
 workdir=${_CONDOR_SCRATCH_DIR:-$PWD}
 cd "$workdir"
-if [[ ! -s nanotuples_snapshot.tar.gz ]]; then
-    echo "NanoTuples snapshot was not transferred" >&2
-    exit 1
+if [[ -z "${HOME:-}" ]]; then
+    export HOME="$workdir"
 fi
-if [[ -n "${X509_USER_PROXY:-}" ]]; then
-    voms-proxy-info -timeleft
-fi
+voms-proxy-info
 
 source /cvmfs/cms.cern.ch/cmsset_default.sh
-cmssw_version=${CMSSW_VERSION:-CMSSW_15_0_10}
-export SCRAM_ARCH=${SCRAM_ARCH:-el9_amd64_gcc12}
-cmsrel "$cmssw_version"
-mkdir -p "$cmssw_version/src/PhysicsTools"
-tar -xzf nanotuples_snapshot.tar.gz -C "$cmssw_version/src/PhysicsTools"
-cd "$cmssw_version/src"
+export SCRAM_ARCH=el9_amd64_gcc12
+cmsrel CMSSW_15_0_10
+cd CMSSW_15_0_10/src
 eval "$(scram runtime -sh)"
 
-model_dir=PhysicsTools/NanoTuples/data/InclParticleTransformer-MD/ak15/V02_xggg_finetune
-for asset in "$model_dir/preprocess_corr.json" "$model_dir/model.onnx" \
-    PhysicsTools/NanoTuples/data/InclParticleTransformer-MD/ak8/V03FullScore/model_full_score.onnx; do
-    if [[ ! -s "$asset" ]]; then
-        echo "Configured model asset missing: $asset" >&2
-        exit 1
-    fi
-done
+mkdir -p PhysicsTools
+git clone https://github.com/hypnotismer/NanoTuples.git PhysicsTools/NanoTuples -b nanov15-finetune-xggg
+wget https://zkou.web.cern.ch/tmp/V02_xggg_finetune/model_opset14.onnx \
+    -O PhysicsTools/NanoTuples/data/InclParticleTransformer-MD/ak15/V02_xggg_finetune/model.onnx
+wget https://coli.web.cern.ch/coli/repo/NanoTuples_data/InclParticleTransformer-MD/ak8/V03FullScore/model_full_score.onnx \
+    -O PhysicsTools/NanoTuples/data/InclParticleTransformer-MD/ak8/V03FullScore/model_full_score.onnx
 
 scram b -j "$threads"
 

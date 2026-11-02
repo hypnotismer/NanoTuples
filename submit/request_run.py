@@ -1,44 +1,23 @@
 #!/usr/bin/env python3
-"""Prepare file-based CMSSW 15 NanoTuples HTCondor jobs."""
+"""Create 2024 NanoTuples JDLs from samples/<datasetname>/<prepid>/dataset."""
 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
+import concurrent.futures
+import json
 import os
 import re
 import subprocess
-import tarfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
 PACKAGE = Path(__file__).resolve().parents[1]
 SUBMIT = Path(__file__).resolve().parent
 SAMPLES = PACKAGE / "samples"
-SAFE_FIELD = re.compile(r"^[A-Za-z0-9_./:+-]+$")
-OUTPUT_ROOT = "root://cceos.ihep.ac.cn:1094//store/user/zkou"
 X509UP = SUBMIT / "x509up"
-
-
-def output_file(kind: str, year: str, mode: str, dataset_name: str, prepid: str, source: str) -> str:
-    product = "CustomizedNanoAOD-slim" if kind == "slim" else "CustomizedNanoAOD"
-    group = "MC" if mode == "mc" else "Data"
-    filename = Path(urlsplit(source).path).name.replace("MiniAODv6", "CustomizedNanoAODv15")
-    return "/".join((OUTPUT_ROOT, product, "V0", year, group, dataset_name, prepid, filename))
-
-
-MODEL_ASSETS = (
-    "data/InclParticleTransformer-MD/ak15/V02_xggg_finetune/preprocess_corr.json",
-    "data/InclParticleTransformer-MD/ak15/V02_xggg_finetune/model.onnx",
-    "data/InclParticleTransformer-MD/ak8/V03FullScore/model_full_score.onnx",
-)
-
-
-def slug(value: str) -> str:
-    result = re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_")
-    if not result:
-        raise ValueError("An empty job or sample name is not allowed")
-    return result[:100]
+OUTPUT_ROOT = "root://cceos.ihep.ac.cn:1094//store/user/zkou"
+SAFE_FIELD = re.compile(r"^[A-Za-z0-9_./:+-]+$")
 
 
 def safe_field(value: str) -> str:
@@ -47,262 +26,232 @@ def safe_field(value: str) -> str:
     return value
 
 
-def input_uri(value: str) -> str:
-    if value.startswith("root://"):
-        return safe_field(value)
-    if value.startswith("/store/"):
-        return safe_field("root://cms-xrd-global.cern.ch/" + value)
-    if value.startswith("file:"):
-        value = value[5:]
-    path = Path(value)
-    if not path.is_absolute():
-        raise ValueError(f"Input must be an absolute path, LFN, or root URL: {value}")
-    resolved = path.resolve()
-    if not resolved.is_file():
-        raise FileNotFoundError(resolved)
-    if str(resolved).startswith("/eos/"):
-        return safe_field("root://eosuser.cern.ch/" + str(resolved))
-    raise ValueError(f"Local input must resolve under /eos for batch workers: {resolved}")
-
-
-def sample_catalog() -> dict[str, tuple[str, str]]:
-    """Map a DAS dataset path to (dataset name, prep id) from samples/*/*/dataset."""
-    catalog: dict[str, tuple[str, str]] = {}
-    for dataset_file in sorted(SAMPLES.glob("*/*/dataset")):
-        text = dataset_file.read_text().strip()
-        dataset = text if text.startswith("/") else "/" + text
-        found = (dataset_file.parent.parent.name, dataset_file.parent.name)
-        previous = catalog.get(dataset)
-        if previous is not None and previous != found:
-            raise RuntimeError(
-                f"{dataset} is listed under both {previous[0]}/{previous[1]} and {found[0]}/{found[1]}"
-            )
-        catalog[dataset] = found
-    return catalog
-
-
-def dataset_from_lfn(lfn: str) -> str:
-    parts = [part for part in lfn.split("/") if part]
-    if len(parts) < 6 or parts[0] != "store" or parts[1] not in {"mc", "data"}:
-        raise ValueError(f"Cannot derive a dataset from input path: {lfn}")
-    era, primary, tier, processing = parts[2], parts[3], parts[4], parts[5]
-    return f"/{primary}/{era}-{processing}/{tier}"
-
-
-def dataset_location(dataset: str, catalog: dict[str, tuple[str, str]]) -> tuple[str, str]:
-    text = dataset.strip()
-    if not text.startswith("/"):
-        text = "/" + text
-    found = catalog.get(text)
-    if found is not None:
-        return found
-    fields = text.strip("/").split("/")
-    if len(fields) != 3:
-        raise ValueError(f"Expected /primary/campaign/tier: {dataset}")
-    return fields[0], fields[1]
-
-
-def location_for_source(source: str, catalog: dict[str, tuple[str, str]]) -> tuple[str, str]:
-    path = urlsplit(source).path if "://" in source else source
-    marker = path.find("/store/")
-    if marker < 0:
-        raise ValueError(f"Cannot derive a dataset from input path: {source}")
-    return dataset_location(dataset_from_lfn(path[marker:]), catalog)
-
-
-def dataset_inputs(dataset: str, mode: str, limit: int | None, proxy: Path, instance: str) -> list[tuple[str, str]]:
-    fields = dataset.strip("/").split("/")
-    tier = "MINIAOD" if mode == "data" else "MINIAODSIM"
-    if len(fields) != 3 or fields[2] != tier or "2024" not in dataset:
-        raise ValueError(f"Expected a 2024 /primary/campaign/{tier} dataset")
-    command = [
-        "dasgoclient",
-        "-query", f"file dataset={dataset} instance={instance} | grep file.name",
-        f"-limit={limit or 0}",
-    ]
-    try:
-        result = subprocess.run(
-            command, check=True, text=True, capture_output=True,
-            env={**os.environ, "X509_USER_PROXY": str(proxy)},
-        )
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError(f"DAS query failed: {error.stderr.strip()}") from error
-    lfns = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not lfns:
-        raise RuntimeError(f"DAS returned no files for {dataset}")
-    return [(fields[0], input_uri(lfn)) for lfn in lfns]
-
-
-def list_inputs(path: Path, label: str) -> list[tuple[str, str]]:
-    values = [
-        line.split("#", 1)[0].strip()
-        for line in path.read_text().splitlines()
-    ]
-    return [(label, input_uri(value)) for value in values if value]
-
-
-def missing_assets() -> list[str]:
-    return [name for name in MODEL_ASSETS if not (PACKAGE / name).is_file()]
+def input_uri(name: str) -> str:
+    if name.startswith("file:"):
+        name = name[5:]
+    if name.startswith("/store/"):
+        name = "root://cms-xrd-global.cern.ch/" + name
+    if not name.startswith("root://"):
+        raise ValueError(f"Expected an LFN or root:// file path: {name}")
+    return safe_field(name)
 
 
 def generate_x509up() -> Path:
-    info = subprocess.run(
-        ["voms-proxy-info", "--file", str(X509UP)],
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-    )
-    if "timeleft  : 191" not in info.stdout:
-        if subprocess.run([str(SUBMIT / "x509up-gen")]).returncode:
-            raise RuntimeError("error generating x509 user proxy")
+    valid = subprocess.run(
+        ["voms-proxy-info", "-file", str(X509UP), "-exists"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode == 0
+    if not valid and subprocess.run([str(SUBMIT / "x509up-gen")]).returncode:
+        raise RuntimeError("error generating x509 user proxy")
     return X509UP
 
 
-def snapshot(path: Path) -> None:
-    with tarfile.open(path, "w:gz", dereference=True) as archive:
-        for item in sorted(PACKAGE.rglob("*")):
-            if not item.is_file():
-                continue
-            rel = item.relative_to(PACKAGE)
-            parts = rel.parts
-            if (
-                ".git" in parts or "__pycache__" in parts
-                or parts[0] == "samples"
-                or (parts[0] == "submit" and rel.as_posix() != "submit/keep_and_drop_2024.txt")
-                or "log" in parts
-                or item.suffix in (".pyc", ".root", ".jdl")
-                or item.name.startswith("x509up")
-            ):
-                continue
-            archive.add(item, arcname="NanoTuples/" + rel.as_posix(), recursive=False)
+def scan_dataset(dataset: str, proxy: Path) -> list[dict]:
+    if dataset.startswith("file:"):
+        dataset = dataset[5:]
+    records = []
+    if dataset.startswith("root://"):
+        url = urlsplit(dataset)
+        server = f"root://{url.netloc}"
+        result = subprocess.run(
+            ["xrdfs", server, "ls", url.path], check=True, text=True, capture_output=True,
+            env={**os.environ, "X509_USER_PROXY": str(proxy)},
+        )
+        for line in result.stdout.splitlines():
+            path = line.strip()
+            if path.endswith(".root"):
+                name = path if path.startswith("root://") else server + "//" + path.lstrip("/")
+                records.append({"file": [{"name": name}]})
+    else:
+        if not dataset.startswith("/"):
+            raise ValueError(f"Expected a DAS dataset or root:// directory: {dataset}")
+        query = f"file dataset={dataset} instance=prod/global | grep file.name,file.nevents"
+        result = subprocess.run(
+            ["dasgoclient", "-query", query, "-limit=0"],
+            text=True, capture_output=True,
+            env={**os.environ, "X509_USER_PROXY": str(proxy)},
+        )
+        if result.returncode or not result.stdout.strip():
+            result = subprocess.run(
+                ["dasgoclient", "-query", f"file dataset={dataset} instance=prod/global | grep file.name", "-limit=0"],
+                check=True, text=True, capture_output=True,
+                env={**os.environ, "X509_USER_PROXY": str(proxy)},
+            )
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if not fields or not fields[0].startswith("/store/"):
+                raise ValueError(f"Unexpected DAS file row: {line!r}")
+            file = {"name": fields[0]}
+            if len(fields) > 1:
+                try:
+                    file["nevents"] = int(fields[1])
+                except ValueError:
+                    pass
+            records.append({"file": [file]})
+    if not records:
+        raise RuntimeError(f"No ROOT files found for {dataset}")
+    return records
+
+
+def sample_files(directory: Path, proxy: Path, force: bool = False) -> list[dict]:
+    path = directory / "filelist"
+    if path.is_file() and not force:
+        return json.loads(path.read_text())
+    dataset_file = directory / "dataset"
+    datasets = [line.strip() for line in dataset_file.read_text().splitlines() if line.strip()]
+    if not datasets:
+        raise ValueError(f"Empty dataset file: {dataset_file}")
+    records = []
+    for dataset in datasets:
+        print(f"Scanning {dataset}")
+        records.extend(scan_dataset(dataset, proxy))
+    temporary = directory / "filelist.tmp"
+    temporary.write_text(json.dumps(records, separators=(",", ":")) + "\n")
+    temporary.replace(path)
+    return records
+
+
+def count_events(name: str) -> int:
+    import uproot
+
+    with uproot.open(input_uri(name), timeout=30) as root_file:
+        return int(root_file["Events"].num_entries)
+
+
+def fill_nevents(directory: Path, records: list[dict], proxy: Path) -> None:
+    missing = [item["file"][0] for item in records if item["file"][0].get("nevents", -1) < 0]
+    if not missing:
+        return
+
+    previous_proxy = os.environ.get("X509_USER_PROXY")
+    os.environ["X509_USER_PROXY"] = str(proxy)
+    try:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=16) as pool:
+            for start in range(0, len(missing), 200):
+                batch = missing[start:start + 200]
+                futures = {pool.submit(count_events, record["name"]): record for record in batch}
+                errors = []
+                for future in concurrent.futures.as_completed(futures):
+                    record = futures[future]
+                    try:
+                        record["nevents"] = future.result()
+                        print(f"{record['name']}: {record['nevents']} Events", flush=True)
+                    except Exception as error:
+                        print(f"Failed to count Events: {record['name']}: {error}", flush=True)
+                        errors.append(f"{record['name']}: {error}")
+                path = directory / "filelist"
+                temporary = directory / "filelist.tmp"
+                temporary.write_text(json.dumps(records, separators=(",", ":")) + "\n")
+                temporary.replace(path)
+                if errors:
+                    raise RuntimeError("Could not read Events in " + "; ".join(errors[:3]))
+    finally:
+        if previous_proxy is None:
+            os.environ.pop("X509_USER_PROXY", None)
+        else:
+            os.environ["X509_USER_PROXY"] = previous_proxy
 
 
 def make_parser(default_output_kind: str = "full") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("data", "mc"), required=True)
-    parser.add_argument("--year", choices=("2024",), default="2024")
-    parser.add_argument("--dbs-instance", choices=("prod/global", "prod/phys03"), default="prod/global",
-                        help="DBS instance for --dataset; DY samples may need prod/phys03")
-    parser.add_argument("--output-kind", choices=("full", "slim"), default=default_output_kind,
-                        help="full customized NanoAOD or old-style 0L/1L/2L slimmed NanoAOD")
-    sources = parser.add_mutually_exclusive_group(required=True)
-    sources.add_argument("--dataset", help="2024 DAS MiniAOD dataset")
-    sources.add_argument("--input-list", type=Path, help="one LFN, root URL, or EOS file path per line")
-    sources.add_argument("--input-file", action="append", help="repeat for explicit LFN, root URL, or EOS files")
-    parser.add_argument("--name", help="local job directory name; remote output uses the dataset and prep id")
-    parser.add_argument("--job-dir", type=Path, help="where to write JDL, snapshot, and logs")
-    parser.add_argument("--events", type=int, default=-1, help="maximum events per file; -1 runs the whole file")
-    parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--memory-mb", type=int, default=8000)
-    parser.add_argument("--max-runtime", type=int, default=8 * 3600, help="seconds")
-    parser.add_argument("--max-files", type=int, help="limit the number of input files")
-    parser.add_argument("--scram-arch", default=os.environ.get("SCRAM_ARCH", "el9_amd64_gcc12"))
-    parser.add_argument("--requirements", help="optional HTCondor requirements expression")
-    parser.add_argument("--submit", action="store_true", help="submit the prepared JDL to HTCondor")
+    parser.add_argument("datasetname", help="directory name under samples/")
+    parser.add_argument("prepid", help="directory name under samples/<datasetname>/")
+    parser.add_argument("--output-kind", choices=("full", "slim"), default=default_output_kind)
+    parser.add_argument("--events", type=int, help="maximum events per file")
+    parser.add_argument("--max-files", type=int)
+    parser.add_argument("--nolog", action="store_true", help="use Run 2 overwritten log names")
     return parser
 
 
 def main(default_output_kind: str = "full") -> None:
     args = make_parser(default_output_kind).parse_args()
-    if args.events == 0 or args.events < -1:
-        raise ValueError("--events must be -1 or positive")
-    if args.threads < 1 or args.memory_mb < 1 or args.max_runtime < 1:
-        raise ValueError("Threads, memory, and runtime must be positive")
+    if any(value in {"", ".", ".."} or "/" in value for value in (args.datasetname, args.prepid)):
+        raise ValueError("datasetname and prepid must be sample directory names")
+    if args.events is not None and args.events < 1:
+        raise ValueError("--events must be positive")
     if args.max_files is not None and args.max_files < 1:
         raise ValueError("--max-files must be positive")
-    safe_field(args.scram_arch)
-    if args.requirements and ("\n" in args.requirements or "\r" in args.requirements):
-        raise ValueError("--requirements must be a single line")
+
+    safe_field(args.datasetname)
+    safe_field(args.prepid)
+    directory = SAMPLES / args.datasetname / args.prepid
+    dataset_file = directory / "dataset"
+    if not dataset_file.is_file():
+        raise FileNotFoundError(dataset_file)
+    datasets = [line.strip() for line in dataset_file.read_text().splitlines() if line.strip()]
+    if not datasets:
+        raise ValueError(f"Empty dataset file: {dataset_file}")
+    isdata = all(dataset.rstrip("/").endswith("/MINIAOD") for dataset in datasets)
+    mode = "data" if isdata else "mc"
+    prog = SUBMIT / f"run-{mode}-2024{'-slim' if args.output_kind == 'slim' else ''}.sh"
     proxy = generate_x509up()
-    catalog = sample_catalog()
-    if args.dataset:
-        dataset_name, prepid = dataset_location(args.dataset, catalog)
-        sources = [uri for _, uri in dataset_inputs(
-            args.dataset, args.mode, args.max_files, proxy, args.dbs_instance
-        )]
-        located = [(dataset_name, prepid, uri) for uri in sources]
-        job_label = args.name or dataset_name
-    elif args.input_list:
-        sources = [uri for _, uri in list_inputs(args.input_list.resolve(), args.input_list.stem)]
-        located = [(*location_for_source(uri, catalog), uri) for uri in sources]
-        job_label = args.name or args.input_list.stem
-    else:
-        sources = [input_uri(value) for value in args.input_file]
-        located = [(*location_for_source(uri, catalog), uri) for uri in sources]
-        job_label = args.name or located[0][0]
-    located = located[:args.max_files]
-    if not located:
-        raise ValueError("No input files selected")
+    all_records = sample_files(directory, proxy)
+    if not all_records:
+        raise RuntimeError(f"Empty filelist: {directory / 'filelist'}")
+    fill_nevents(directory, all_records, proxy)
+    records = all_records[:args.max_files]
 
-    missing = missing_assets()
-    if args.submit and missing:
-        raise RuntimeError("Configured models/preprocessing are missing: " + ", ".join(missing))
-
-    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_name = slug(job_label + ("_slim" if args.output_kind == "slim" else "")) + "_" + timestamp
-    job_dir = (args.job_dir or SUBMIT / "jobs" / run_name).resolve()
-    job_dir.mkdir(parents=True, exist_ok=False)
-    (job_dir / "logs").mkdir()
-
-    tarball = job_dir / "nanotuples_snapshot.tar.gz"
-    snapshot(tarball)
+    product = "CustomizedNanoAOD-slim" if args.output_kind == "slim" else "CustomizedNanoAOD"
+    output_dir = "/".join((OUTPUT_ROOT, product, "V0", "2024", "Data" if isdata else "MC", args.datasetname, args.prepid))
+    logdir = SUBMIT / "log" / args.datasetname / args.prepid
+    logdir.mkdir(parents=True, exist_ok=True)
     rows = []
-    directories: list[str] = []
-    for dataset_name, prepid, source in located:
-        dest = output_file(args.output_kind, args.year, args.mode, dataset_name, prepid, source)
-        directory = dest.rsplit("/", 1)[0]
-        if directory not in directories:
-            directories.append(directory)
-        rows.append(f"{args.events}, {safe_field(source)}, {safe_field(dest)}")
+    for item in records:
+        file = item["file"][0]
+        name = input_uri(file["name"])
+        basename = Path(urlsplit(name).path).name
+        nevents = int(file["nevents"])
+        if args.events is not None:
+            nevents = min(args.events, nevents) if nevents > 0 else args.events
+        output = safe_field(output_dir + "/" + basename.replace("MiniAODv6", "CustomizedNanoAODv15"))
+        logprefix = logdir / ("overwritten" if args.nolog else Path(basename).stem)
+        rows.append(f"{nevents}, {name}, {output}, {logprefix}")
 
-    version = PACKAGE.parents[2].name
-    if not re.fullmatch(r"CMSSW_[0-9_]+", version):
-        raise RuntimeError(f"Could not derive CMSSW version from {PACKAGE}")
-    executable = SUBMIT / f"run-{args.mode}-{args.year}{'-slim' if args.output_kind == 'slim' else ''}.sh"
-    if not executable.is_file():
-        raise FileNotFoundError(executable)
-    jdl = job_dir / "nano.jdl"
+    jdl_dir = SUBMIT / "jdl"
+    jdl_dir.mkdir(exist_ok=True)
+    suffix = "_slim" if args.output_kind == "slim" else ""
+    jdl = jdl_dir / f"{args.datasetname}_{args.prepid}{suffix}.jdl"
     lines = [
-        "universe = vanilla",
-        f"executable = {executable}",
-        "transfer_executable = True",
-        "arguments = $(NEVENT) $(THREADS) $(FILEIN) $(FILEOUT)",
-        f"THREADS = {args.threads}",
-        f'environment = "CMSSW_VERSION={version} SCRAM_ARCH={args.scram_arch}"',
-        f"request_cpus = {args.threads}",
-        f"request_memory = {args.memory_mb}",
-        f"request_disk = 12000",
-        f"+MaxRuntime = {args.max_runtime}",
+        "Universe = vanilla",
+        f"Executable = {prog}",
+        "",
+        '+ProjectName="cms.org.cern"',
+        "",
+        f"X509UP = {proxy}",
+        "NTHREAD = 8",
+        "Arguments = $(NEVENT) $(NTHREAD) $(FILEIN) $(FILEOUT)",
+        "",
+        "request_cpus = 8",
+        "request_memory = 4096",
         "use_x509userproxy = True",
-        f"x509userproxy = {proxy}",
+        "x509userproxy = $(X509UP)",
+        "",
+        "on_exit_remove        = (ExitBySignal == False) && (ExitCode == 0)",
+        "on_exit_hold          = (ExitBySignal == True) || (ExitCode != 0)",
+        'on_exit_hold_reason   = strcat("Job held by ON_EXIT_HOLD due to ", ifThenElse((ExitBySignal == True), strcat("exit signal ", ExitSignal), strcat("exit code ", ExitCode)), ".")',
+        "periodic_release      = (NumJobStarts < 3) && ((CurrentTime - EnteredCurrentStatus) > 60*60)",
+        "",
+        "+MaxRuntime = 4*60*60",
+        "",
+        "Log    = $(LOGPREFIX).log",
+        "Output = $(LOGPREFIX)_1.log",
+        "Error  = $(LOGPREFIX)_2.log",
+        "",
         "should_transfer_files = YES",
-        "when_to_transfer_output = ON_EXIT",
-        f"transfer_input_files = {tarball}, {SUBMIT / 'run_nano.sh'}",
+        f"transfer_input_files = {SUBMIT / 'run_nano.sh'}",
         'transfer_output_files = ""',
-        "on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)",
-        f"Log = {job_dir / 'logs' / '$(ClusterId).$(ProcId).log'}",
-        f"Output = {job_dir / 'logs' / '$(ClusterId).$(ProcId).out'}",
-        f"Error = {job_dir / 'logs' / '$(ClusterId).$(ProcId).err'}",
+        "Queue NEVENT, FILEIN, FILEOUT, LOGPREFIX from (",
+        *rows,
+        ")",
+        "",
     ]
-    if args.requirements:
-        lines.append(f"requirements = {args.requirements}")
-    lines.extend(["", "queue NEVENT, FILEIN, FILEOUT from (", *rows, ")", ""])
     jdl.write_text("\n".join(lines))
-
-    print(f"Prepared {len(located)} {args.mode} {args.output_kind} job(s): {jdl}")
-    for directory in directories:
-        print(f"Output directory: {directory}")
-    print(f"Code snapshot: {tarball}")
-    if missing:
-        print("Configured assets still missing: " + ", ".join(missing))
-    if args.submit:
-        subprocess.run(["condor_submit", str(jdl)], check=True)
-    elif missing:
-        print("Install the configured assets and renew the grid proxy before submitting this JDL.")
-    else:
-        print(f"Review then submit with: condor_submit {jdl}")
+    print(f"Prepared {len(rows)} {mode} {args.output_kind} job(s): {jdl}")
+    print(f"Submit with: condor_submit {jdl.relative_to(SUBMIT)}")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, FileNotFoundError, RuntimeError) as error:
+    except (ValueError, FileNotFoundError, RuntimeError, subprocess.CalledProcessError, KeyError) as error:
         raise SystemExit(f"error: {error}") from None

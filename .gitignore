@@ -9,6 +9,7 @@ __init__.py
 *.pyc
 *.onnx
 /submit/jobs/
+/submit/jdl/
+/submit/log/
+/submit/x509up
 /samples/*/*/filelist
-/samples/*/*/scan.json
-/samples/*/*/scan_error.json
